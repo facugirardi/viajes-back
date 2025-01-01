@@ -1,0 +1,20 @@
+from flask import Flask
+from db import close_db
+from routes import bp
+from flask_cors import CORS
+
+def create_app():
+    app = Flask(__name__)
+    CORS(app, origins=["http://localhost:3000"])  # Permitir solicitudes desde el cliente
+
+    # Registrar las rutas
+    app.register_blueprint(bp)
+
+    # Cerrar la conexión a la base de datos al terminar la solicitud
+    app.teardown_appcontext(close_db)
+
+    return app
+
+if __name__ == '__main__':
+    app = create_app()
+    app.run(debug=True)
