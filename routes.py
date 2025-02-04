@@ -115,3 +115,22 @@ def create_contact_message():
     except Exception as e:
         print(f"Error al insertar mensaje de contacto: {e}")
         return jsonify({"error": "Ocurrió un error al procesar tu solicitud"}), 500
+
+ 
+@bp.route('/messages', methods=['GET'])
+def get_contact_messages():
+    """Obtener todos los mensajes de contacto."""
+    try:
+        db = get_db()
+        query = "SELECT id, name, email, message, category FROM contact_messages ORDER BY id DESC"
+        result = db.run(query)
+
+        messages = [
+            {"id": row[0], "name": row[1], "email": row[2], "message": row[3], "category": row[4]}
+            for row in result
+        ]
+        return jsonify(messages), 200
+
+    except Exception as e:
+        print(f"Error al obtener mensajes de contacto: {e}")
+        return jsonify({"error": "Ocurrió un error al procesar tu solicitud"}), 500
