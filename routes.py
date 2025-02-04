@@ -95,7 +95,7 @@ def create_contact_message():
         data = request.get_json()
 
         # Validar datos
-        if not data.get('name') or not data.get('email') or not data.get('message'):
+        if not data.get('name') or not data.get('email') or not data.get('message') or not data.get('category'):
             return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
         # Conectar a la base de datos
@@ -103,8 +103,8 @@ def create_contact_message():
 
         # Consulta SQL
         query = f"""
-            INSERT INTO contact_messages (name, email, message)
-            VALUES ('{data['name']}', '{data['email']}', '{data['message']}')
+            INSERT INTO contact_messages (name, email, message, category)
+            VALUES ('{data['name']}', '{data['email']}', '{data['message']}', '{data['category']}')
             RETURNING id
         """
 
@@ -122,11 +122,11 @@ def get_contact_messages():
     """Obtener todos los mensajes de contacto."""
     try:
         db = get_db()
-        query = "SELECT id, name, email, message, category FROM contact_messages ORDER BY id DESC"
+        query = "SELECT id, name, email, message, category, created_at, leido  FROM contact_messages ORDER BY id DESC"
         result = db.run(query)
 
         messages = [
-            {"id": row[0], "name": row[1], "email": row[2], "message": row[3], "category": row[4]}
+            {"id": row[0], "name": row[1], "email": row[2], "message": row[3], "category": row[4], "created_at": row[5], "leido": row[6]}
             for row in result
         ]
         return jsonify(messages), 200
