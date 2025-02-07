@@ -79,14 +79,6 @@ def login():
         print(f"Error al iniciar sesión: {e}")
         return jsonify({"error": "Error al procesar la solicitud"}), 500
 
-@bp.route('/packages', methods=['GET'])
-def get_packages():
-    """Obtener todos los paquetes turísticos."""
-    db = get_db()
-    query = "SELECT * FROM packages"
-    results = db.run(query)
-    return jsonify(results)
-
 @bp.route('/contact_messages', methods=['POST'])
 def create_contact_message():
     """Crear un mensaje de contacto."""
@@ -178,3 +170,64 @@ def mark_message_as_read(message_id):
     except Exception as e:
         print(f"Error al marcar el mensaje como leído: {e}")
         return jsonify({"error": "Ocurrió un error al actualizar el mensaje"}), 500
+
+
+@bp.route('/packages', methods=['GET'])
+def get_packages():
+    """Obtener todos los paquetes turísticos con detalles completos."""
+    try:
+        db = get_db()
+        query = """
+            SELECT id, name, description, duration, category, start_date, end_date, availability, 
+                   booking_deadline, discounts, accommodation, meals, transportation, tours, 
+                   insurance, guides, additional_services, excluded_items, photos, videos, 
+                   departure_location, return_location, meeting_points, itinerary, status, 
+                   customizations, group_size, travel_restrictions, created_at, updated_at
+            FROM packages ORDER BY id DESC
+        """
+        result = db.run(query)
+
+        if not result:
+            return jsonify({"message": "No hay paquetes disponibles"}), 200
+
+        packages = [
+            {
+                "id": row[0],
+                "name": row[1],
+                "description": row[2],
+                "duration": row[3],
+                "category": row[4],
+                "start_date": row[5],
+                "end_date": row[6],
+                "availability": row[7],
+                "booking_deadline": row[8],
+                "discounts": row[9],
+                "accommodation": row[10],
+                "meals": row[11],
+                "transportation": row[12],
+                "tours": row[13],
+                "insurance": row[14],
+                "guides": row[15],
+                "additional_services": row[16],
+                "excluded_items": row[17],
+                "photos": row[18],
+                "videos": row[19],
+                "departure_location": row[20],
+                "return_location": row[21],
+                "meeting_points": row[22],
+                "itinerary": row[23],
+                "status": row[24],
+                "customizations": row[25],
+                "group_size": row[26],
+                "travel_restrictions": row[27],
+                "created_at": row[28],
+                "updated_at": row[29],
+            }
+            for row in result
+        ]
+        
+        return jsonify(packages), 200
+
+    except Exception as e:
+        print(f"Error al obtener paquetes turísticos: {e}")
+        return jsonify({"error": "Ocurrió un error al procesar tu solicitud"}), 500
