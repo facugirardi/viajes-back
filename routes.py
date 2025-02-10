@@ -3,9 +3,25 @@ from db import get_db
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
+import boto3
+from werkzeug.utils import secure_filename
+import uuid
 
 bp = Blueprint('routes', __name__)
 SECRET_KEY = 'vayafgav' 
+
+# Configuración de Cloudflare R2
+R2_ACCESS_KEY_ID = "ecd477a832e8f08a572ff8b6d179fc3c"
+R2_SECRET_ACCESS_KEY = "1f5834c6a8ca4fbc154ec934c29cdc5cdec6df3352c13e4bb4fd7606d485d58d"
+R2_BUCKET_NAME = "viajes"
+R2_ENDPOINT_URL = "https://93f9401a1ebc8cccebfa063f9a24056a.r2.cloudflarestorage.com"
+
+s3_client = boto3.client(
+    "s3",
+    endpoint_url=R2_ENDPOINT_URL,
+    aws_access_key_id=R2_ACCESS_KEY_ID,
+    aws_secret_access_key=R2_SECRET_ACCESS_KEY
+)
 
 @bp.route('/users', methods=['POST'])
 def create_user():
@@ -171,63 +187,142 @@ def mark_message_as_read(message_id):
         print(f"Error al marcar el mensaje como leído: {e}")
         return jsonify({"error": "Ocurrió un error al actualizar el mensaje"}), 500
 
-
 @bp.route('/packages', methods=['GET'])
 def get_packages():
-    """Obtener todos los paquetes turísticos con detalles completos."""
+    """Obtener todos los paquetes turísticos con sus secciones e imágenes."""
     try:
         db = get_db()
-        query = """
-            SELECT id, name, description, duration, category, start_date, end_date, availability, 
-                   booking_deadline, discounts, accommodation, meals, transportation, tours, 
-                   insurance, guides, additional_services, excluded_items, photos, videos, 
-                   departure_location, return_location, meeting_points, itinerary, status, 
-                   customizations, group_size, travel_restrictions, created_at, updated_at
-            FROM packages ORDER BY id DESC
-        """
-        result = db.run(query)
 
-        if not result:
-            return jsonify({"message": "No hay paquetes disponibles"}), 200
+        # 1️⃣ Obtener los paquetes
+        query = f"SELECT id, name, destination, start_date, end_date FROM packages ORDER BY id DESC"
+        packages = db.run(query)
 
-        packages = [
-            {
-                "id": row[0],
-                "name": row[1],
-                "description": row[2],
-                "duration": row[3],
-                "category": row[4],
-                "start_date": row[5],
-                "end_date": row[6],
-                "availability": row[7],
-                "booking_deadline": row[8],
-                "discounts": row[9],
-                "accommodation": row[10],
-                "meals": row[11],
-                "transportation": row[12],
-                "tours": row[13],
-                "insurance": row[14],
-                "guides": row[15],
-                "additional_services": row[16],
-                "excluded_items": row[17],
-                "photos": row[18],
-                "videos": row[19],
-                "departure_location": row[20],
-                "return_location": row[21],
-                "meeting_points": row[22],
-                "itinerary": row[23],
-                "status": row[24],
-                "customizations": row[25],
-                "group_size": row[26],
-                "travel_restrictions": row[27],
-                "created_at": row[28],
-                "updated_at": row[29],
+        packages_list = []
+        for package in packages:
+            package_id = package[0]
+            package_data = {
+                "id": package_id,
+                "name": package[1],
+                "destination": package[2],
+                "start_date": package[3],
+                "end_date": package[4],
+                "sections": [],
+                "images": []
             }
-            for row in result
-        ]
-        
-        return jsonify(packages), 200
+
+            # 2️⃣ Obtener las secciones del paquete
+            sections_query = f"""
+                SELECT title, description, icon
+                FROM package_sections
+                WHERE package_id = {package_id}
+            """
+            sections = db.run(sections_query)
+            package_data["sections"] = [{"title": s[0], "description": s[1], "icon": s[2]} for s in sections]
+
+            # 3️⃣ Obtener las imágenes del paquete
+            images_query = f"SELECT image_url FROM package_images WHERE package_id = {package_id}"
+            images = db.run(images_query)
+            package_data["images"] = [img[0] for img in images]
+
+            packages_list.append(package_data)
+
+        return jsonify(packages_list), 200
 
     except Exception as e:
         print(f"Error al obtener paquetes turísticos: {e}")
         return jsonify({"error": "Ocurrió un error al procesar tu solicitud"}), 500
+
+
+@bp.route('/api/create_package', methods=['POST'])
+def create_package():
+    """Crear un paquete con imágenes y secciones."""
+    try:
+        db = get_db()
+        data = request.form
+        files = request.files.getlist("images")
+
+        # Depuración
+        print("Recibiendo imágenes:", [file.filename for file in files])  # Debería imprimir la lista de archivos
+        if not files:
+            print("⚠️ No llegaron archivos en la solicitud.")
+
+
+        # 1️⃣ Insertar el paquete en la BD
+        query = f"""
+            INSERT INTO packages (name, destination, start_date, end_date)
+            VALUES ('{data.get("title")}', '{data.get("destination")}', '{data.get("departureDate")}', '{data.get("returnDate")}')
+            RETURNING id
+        """
+        result = db.run(query)
+
+        if not result:
+            return jsonify({"error": "Error al insertar el paquete"}), 500
+
+        package_id = result[0][0]  # Obtener el ID del paquete recién insertado
+
+        # 2️⃣ Insertar las secciones del paquete en `package_sections`
+        sections = []
+        index = 0
+        while f"sections[{index}][title]" in data:
+            section_title = data.get(f"sections[{index}][title]")
+            section_description = data.get(f"sections[{index}][description]")
+            section_icon = data.get(f"sections[{index}][icon]", "")
+
+            sections.append(f"({package_id}, '{section_title}', '{section_description}', '{section_icon}')")
+            index += 1
+
+        if sections:
+            sections_query = f"""
+                INSERT INTO package_sections (package_id, title, description, icon)
+                VALUES {', '.join(sections)}
+            """
+            db.run(sections_query)
+
+        # 3️⃣ Subir imágenes a Cloudflare R2 y guardar las URLs
+        image_urls = []
+        for file in files:
+            if file:
+                filename = secure_filename(file.filename)
+                file_extension = filename.split('.')[-1]
+                unique_filename = f"{uuid.uuid4()}.{file_extension}"  # Nombre único para evitar colisiones
+                
+                file_path = f"packages/{package_id}/{unique_filename}"  # Ruta en R2
+                
+                # **Depuración**
+                print(f"Subiendo archivo: {filename} como {file_path}")
+
+                # Subir la imagen a Cloudflare R2
+                try:
+                    s3_client.upload_fileobj(file, R2_BUCKET_NAME, file_path)
+                    print(f"✅ Imagen subida correctamente: {file_path}")
+                except Exception as e:
+                    print(f"❌ Error al subir la imagen {filename}: {e}")
+                    continue  # Saltar a la siguiente imagen si hay un error
+
+                # Generar URL pública
+                image_url = f"https://pub-35ca4370eb7e499595a069cecaff5fab.r2.dev/{file_path}"
+                image_urls.append((package_id, image_url))
+
+        # **Depuración**
+        print("Lista de imágenes a guardar en la BD:", image_urls)
+
+        # 4️⃣ Insertar URLs de imágenes en la base de datos
+        if image_urls:
+            try:
+                # Construir la consulta con F-string
+                values = ", ".join([f"({package_id}, '{image_url}')" for package_id, image_url in image_urls])
+                query = f"INSERT INTO package_images (package_id, image_url) VALUES {values};"
+
+                print("🔹 Ejecutando consulta SQL:", query)  # Para depuración
+
+                db.run(query)  # Ejecutar la consulta con tu método `db.run()`
+
+                print("✅ URLs de imágenes insertadas en la base de datos correctamente")
+            except Exception as e:
+                print(f"❌ Error al insertar imágenes en la BD: {e}")
+                
+        return jsonify({"message": "Paquete creado exitosamente", "package_id": package_id, "images": image_urls}), 201
+
+    except Exception as e:
+        print(f"Error al crear el paquete: {e}")
+        return jsonify({"error": "Error interno del servidor"}), 500

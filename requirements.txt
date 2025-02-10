@@ -1,2 +1,4 @@
 pg8000
 Flask
+boto3
+jwt
