@@ -326,3 +326,43 @@ def create_package():
     except Exception as e:
         print(f"Error al crear el paquete: {e}")
         return jsonify({"error": "Error interno del servidor"}), 500
+
+@bp.route('/api/delete_package/<int:package_id>', methods=['DELETE'])
+def delete_package(package_id):
+    """Eliminar un paquete, sus imágenes, secciones y archivos en Cloudflare R2."""
+    try:
+        db = get_db()
+
+        # 1️⃣ Obtener las imágenes asociadas al paquete
+        images_query = f"SELECT image_url FROM package_images WHERE package_id = {package_id}"
+        images = db.run(images_query)
+        image_urls = [img[0] for img in images]
+
+        # 2️⃣ Borrar archivos del Cloudflare R2
+        for image_url in image_urls:
+            if "r2.dev/" in image_url:
+                file_key = image_url.split("r2.dev/")[-1]  # Extraer solo la ruta del archivo
+                try:
+                    s3_client.delete_object(Bucket=R2_BUCKET_NAME, Key=file_key)
+                    print(f"✅ Imagen eliminada de R2: {file_key}")
+                except Exception as e:
+                    print(f"❌ Error al eliminar la imagen {file_key} de R2: {e}")
+
+        # 3️⃣ Borrar imágenes del paquete en la base de datos
+        delete_images_query = f"DELETE FROM package_images WHERE package_id = {package_id}"
+        db.run(delete_images_query)
+
+        # 4️⃣ Borrar secciones del paquete en la base de datos
+        delete_sections_query = f"DELETE FROM package_sections WHERE package_id = {package_id}"
+        db.run(delete_sections_query)
+
+        # 5️⃣ Borrar el paquete en la base de datos
+        delete_package_query = f"DELETE FROM packages WHERE id = {package_id}"
+        db.run(delete_package_query)
+
+        print(f"✅ Paquete {package_id} eliminado correctamente")
+        return jsonify({"message": f"Paquete {package_id} eliminado correctamente"}), 200
+
+    except Exception as e:
+        print(f"❌ Error al eliminar el paquete {package_id}: {e}")
+        return jsonify({"error": "Error interno del servidor"}), 500
