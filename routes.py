@@ -267,14 +267,26 @@ def create_package():
             section_title = data.get(f"sections[{index}][title]")
             section_description = data.get(f"sections[{index}][description]")
             section_icon = data.get(f"sections[{index}][icon]", "")
+            section_type = "package"  # Tipo de sección
 
-            sections.append(f"({package_id}, '{section_title}', '{section_description}', '{section_icon}')")
+            sections.append(f"({package_id}, '{section_title}', '{section_description}', '{section_icon}', '{section_type}')")
+            index += 1
+            
+        destination_sections = []
+        index = 0
+        while f"destinationSections[{index}][title]" in data:
+            section_title = data.get(f"destinationSections[{index}][title]")
+            section_description = data.get(f"destinationSections[{index}][description]")
+            section_icon = data.get(f"destinationSections[{index}][icon]", "")  # Nombre del icono
+            section_type = "destination"  # Tipo de sección
+
+            destination_sections.append(f"({package_id}, '{section_title}', '{section_description}', '{section_icon}', '{section_type}')")
             index += 1
 
-        if sections:
+        if sections or destination_sections:
             sections_query = f"""
-                INSERT INTO package_sections (package_id, title, description, icon)
-                VALUES {', '.join(sections)}
+                INSERT INTO package_sections (package_id, title, description, icon, type)
+                VALUES {', '.join(sections + destination_sections)}
             """
             db.run(sections_query)
 
@@ -365,4 +377,202 @@ def delete_package(package_id):
 
     except Exception as e:
         print(f"❌ Error al eliminar el paquete {package_id}: {e}")
+        return jsonify({"error": "Error interno del servidor"}), 500
+    
+@bp.route('/api/packages/<int:package_id>', methods=['GET'])
+def get_package_by_id(package_id):
+    """Obtener un paquete específico con sus secciones e imágenes."""
+    try:
+        db = get_db()
+
+        # 1️⃣ Obtener la información del paquete
+        package_query = f"""
+            SELECT id, name, destination, start_date, end_date
+            FROM packages
+            WHERE id = {package_id}
+        """
+        package_result = db.run(package_query)
+
+        if not package_result:
+            return jsonify({"error": "Paquete no encontrado"}), 404
+
+        package = package_result[0]
+        package_data = {
+            "id": package[0],
+            "title": package[1],
+            "destination": package[2],
+            "departureDate": package[3],
+            "returnDate": package[4],
+            "sections": [],
+            "destinationSections": [],
+            "images": []
+        }
+
+        # 2️⃣ Obtener las secciones del paquete con `type` y `icon`
+        sections_query = f"""
+            SELECT id, title, description, icon, type
+            FROM package_sections
+            WHERE package_id = {package_id}
+        """
+        sections_result = db.run(sections_query)
+
+        for sec in sections_result:
+            section = {
+                "id": sec[0],
+                "title": sec[1],
+                "description": sec[2],
+                "iconType": sec[3],  # Aquí el nombre del icono
+            }
+            if sec[4] == "package":
+                package_data["sections"].append(section)
+            else:
+                package_data["destinationSections"].append(section)
+
+        # 3️⃣ Obtener las imágenes del paquete
+        images_query = f"""
+            SELECT image_url
+            FROM package_images
+            WHERE package_id = {package_id}
+        """
+        images_result = db.run(images_query)
+        package_data["images"] = [img[0] for img in images_result]
+
+        return jsonify(package_data), 200
+
+    except Exception as e:
+        print(f"❌ Error al obtener el paquete {package_id}: {e}")
+        return jsonify({"error": "Error interno del servidor"}), 500
+
+@bp.route('/api/packages/<int:package_id>', methods=['PUT'])
+def update_package(package_id):
+    """Actualizar un paquete con nuevas imágenes y secciones sin duplicarlas y actualizando correctamente."""
+    try:
+        db = get_db()
+        data = request.form
+        files = request.files.getlist("images")
+        delete_images = request.form.getlist("deleteImages")
+        delete_sections = request.form.getlist("deleteSections")
+        delete_destination_sections = request.form.getlist("deleteDestinationSections")
+
+        # 1️⃣ Obtener la información actual del paquete
+        package_info = db.run(f"SELECT name, destination, start_date, end_date FROM packages WHERE id = {package_id}")
+        if not package_info:
+            return jsonify({"error": "Paquete no encontrado"}), 404
+
+        package_info = package_info[0]
+        new_title = data.get("title")
+        new_destination = data.get("destination")
+        new_start_date = data.get("departureDate")
+        new_end_date = data.get("returnDate")
+
+        # 2️⃣ **Actualizar solo si cambió algún dato**
+        if (new_title != package_info[0] or new_destination != package_info[1] or 
+            new_start_date != package_info[2] or new_end_date != package_info[3]):
+            update_query = f"""
+                UPDATE packages 
+                SET name = '{new_title}', 
+                    destination = '{new_destination}', 
+                    start_date = '{new_start_date}', 
+                    end_date = '{new_end_date}'
+                WHERE id = {package_id}
+            """
+            db.run(update_query)
+
+        # 3️⃣ **Eliminar imágenes y secciones marcadas**
+        if delete_images:
+            db.run(f"DELETE FROM package_images WHERE image_url IN ({', '.join([f"'{img}'" for img in delete_images])}) AND package_id = {package_id}")
+
+        if delete_sections:
+            db.run(f"DELETE FROM package_sections WHERE id IN ({', '.join(delete_sections)}) AND package_id = {package_id}")
+
+        if delete_destination_sections:
+            db.run(f"DELETE FROM package_sections WHERE id IN ({', '.join(delete_destination_sections)}) AND package_id = {package_id}")
+
+        # 4️⃣ **Obtener secciones actuales**
+        existing_sections = {row[0]: {"title": row[1], "description": row[2], "iconType": row[3]} for row in 
+                             db.run(f"SELECT id, title, description, icon FROM package_sections WHERE package_id = {package_id} AND type = 'package'")}
+
+        existing_destination_sections = {row[0]: {"title": row[1], "description": row[2], "iconType": row[3]} for row in 
+                                         db.run(f"SELECT id, title, description, icon FROM package_sections WHERE package_id = {package_id} AND type = 'destination'")}
+
+        # 5️⃣ **Actualizar o insertar secciones (según corresponda)**
+        index = 0
+        while f"sections[{index}][title]" in data:
+            section_id = data.get(f"sections[{index}][id]")
+            section_title = data.get(f"sections[{index}][title]")
+            section_description = data.get(f"sections[{index}][description]")
+            section_icon = data.get(f"sections[{index}][icon]", "")
+            section_type = "package"
+
+            if section_id and section_id.isdigit():  # Si el ID es válido, actualizar
+                db.run(f"""
+                    UPDATE package_sections 
+                    SET title = '{section_title}', description = '{section_description}', icon = '{section_icon}' 
+                    WHERE id = {section_id} AND package_id = {package_id}
+                """)
+            elif any(sec["title"] == section_title for sec in existing_sections.values()):  
+                # Si la sección existe por título (riesgoso si los títulos cambian), actualizar
+                existing_id = next(key for key, val in existing_sections.items() if val["title"] == section_title)
+                db.run(f"""
+                    UPDATE package_sections 
+                    SET description = '{section_description}', icon = '{section_icon}' 
+                    WHERE id = {existing_id} AND package_id = {package_id}
+                """)
+            else:
+                # Insertar nueva sección si no existe
+                db.run(f"""
+                    INSERT INTO package_sections (package_id, title, description, icon, type)
+                    VALUES ({package_id}, '{section_title}', '{section_description}', '{section_icon}', '{section_type}')
+                """)
+
+            index += 1
+
+        # 6️⃣ **Actualizar o insertar secciones de destino (según corresponda)**
+        index = 0
+        while f"destinationSections[{index}][title]" in data:
+            section_id = data.get(f"destinationSections[{index}][id]")
+            section_title = data.get(f"destinationSections[{index}][title]")
+            section_description = data.get(f"destinationSections[{index}][description]")
+            section_icon = data.get(f"destinationSections[{index}][icon]", "")
+            section_type = "destination"
+
+            if section_id and section_id.isdigit():
+                db.run(f"""
+                    UPDATE package_sections 
+                    SET title = '{section_title}', description = '{section_description}', icon = '{section_icon}' 
+                    WHERE id = {section_id} AND package_id = {package_id}
+                """)
+            elif any(sec["title"] == section_title for sec in existing_destination_sections.values()):  
+                existing_id = next(key for key, val in existing_destination_sections.items() if val["title"] == section_title)
+                db.run(f"""
+                    UPDATE package_sections 
+                    SET description = '{section_description}', icon = '{section_icon}' 
+                    WHERE id = {existing_id} AND package_id = {package_id}
+                """)
+            else:
+                db.run(f"""
+                    INSERT INTO package_sections (package_id, title, description, icon, type)
+                    VALUES ({package_id}, '{section_title}', '{section_description}', '{section_icon}', '{section_type}')
+                """)
+
+            index += 1
+
+        # 7️⃣ **Agregar nuevas imágenes si hay**
+        image_urls = []
+        for file in files:
+            if file:
+                filename = secure_filename(file.filename)
+                file_extension = filename.split('.')[-1]
+                unique_filename = f"{uuid.uuid4()}.{file_extension}"
+                file_path = f"packages/{package_id}/{unique_filename}"
+
+                s3_client.upload_fileobj(file, "viajes", file_path)
+                image_url = f"https://pub-35ca4370eb7e499595a069cecaff5fab.r2.dev/{file_path}"
+                db.run(f"INSERT INTO package_images (package_id, image_url) VALUES ({package_id}, '{image_url}')")
+                image_urls.append(image_url)
+
+        return jsonify({"message": "Paquete actualizado correctamente", "new_images": image_urls}), 200
+
+    except Exception as e:
+        print(f"❌ Error al actualizar paquete {package_id}: {e}")
         return jsonify({"error": "Error interno del servidor"}), 500
