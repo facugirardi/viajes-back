@@ -1,4 +1,6 @@
 pg8000
 Flask
 boto3
-jwt
+flask-cors
+pyjwt
+werkzeug
