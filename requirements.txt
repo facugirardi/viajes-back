@@ -4,3 +4,4 @@ boto3
 flask-cors
 pyjwt
 werkzeug
+gunicorn

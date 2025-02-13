@@ -5,7 +5,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, origins=["http://localhost:3000"])  # Permitir solicitudes desde el cliente
+    CORS(app, origins=["https://vayaturismo.com", "http://vayaturismo.com", "http://localhost:3000"])  # Permitir solicitudes desde el cliente
 
     # Registrar las rutas
     app.register_blueprint(bp)
@@ -17,4 +17,4 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
