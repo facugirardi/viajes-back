@@ -480,7 +480,9 @@ def update_package(package_id):
 
         # 3️⃣ **Eliminar imágenes y secciones marcadas**
         if delete_images:
-            db.run(f"DELETE FROM package_images WHERE image_url IN ({', '.join([f'\'{img}\'' for img in delete_images])}) AND package_id = {package_id}")
+            db.run("DELETE FROM package_images WHERE image_url IN ({}) AND package_id = {}".format(
+                ", ".join(["'{}'".format(img) for img in delete_images]), package_id
+            ))
 
         if delete_sections:
             db.run(f"DELETE FROM package_sections WHERE id IN ({', '.join(delete_sections)}) AND package_id = {package_id}")
