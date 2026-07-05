@@ -1,7 +1,8 @@
 pg8000
 Flask
-boto3
+requests
 flask-cors
 pyjwt
 werkzeug
 gunicorn
+python-dotenv
