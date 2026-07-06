@@ -103,6 +103,7 @@ def login_required(f):
 
 
 @bp.route('/users', methods=['POST'])
+@login_required
 def create_user():
     """Crear un nuevo usuario."""
     try:
@@ -170,36 +171,6 @@ def login():
     except Exception as e:
         print(f"Error al iniciar sesión: {e}")
         return jsonify({"error": "Error al procesar la solicitud"}), 500
-
-@bp.route('/contact_messages', methods=['POST'])
-def create_contact_message():
-    """Crear un mensaje de contacto."""
-    try:
-        # Obtener datos del cliente
-        data = request.get_json()
-
-        # Validar datos
-        if not data.get('name') or not data.get('email') or not data.get('message') or not data.get('category'):
-            return jsonify({"error": "Todos los campos son obligatorios"}), 400
-
-        # Conectar a la base de datos
-        db = get_db()
-
-        result = db.run(
-            """
-            INSERT INTO contact_messages (name, email, message, category)
-            VALUES (:name, :email, :message, :category)
-            RETURNING id
-            """,
-            name=data['name'], email=data['email'], message=data['message'], category=data['category']
-        )
-        print(result)
-        return jsonify({"id": result[0][0]}), 201
-
-    except Exception as e:
-        print(f"Error al insertar mensaje de contacto: {e}")
-        return jsonify({"error": "Ocurrió un error al procesar tu solicitud"}), 500
-
 
 @bp.route('/messages', methods=['GET'])
 @login_required
