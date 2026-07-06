@@ -8,7 +8,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, origins=["https://vayaturismo.com", "http://vayaturismo.com", "http://localhost:3000"])  # Permitir solicitudes desde el cliente
+    CORS(app, origins=["https://vayaturismo.com", "http://localhost:3000", "https://viajes-front-facubudis-projects.vercel.app"]) 
 
     # Registrar las rutas
     app.register_blueprint(bp)
